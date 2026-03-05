@@ -3,7 +3,8 @@
 基于 Cloudflare 全家桶的轻量级音乐 Web 应用示例，实现了：
 
 - 用户名+密码注册登录（无邮箱/手机号绑定）
-- 后端代理音乐搜索接口，规避前端 CORS
+- 音乐搜索、在线播放、歌单管理
+- 后端代理音乐接口，规避前端 CORS
 - D1 持久化用户与歌单数据
 - Durable Object 房间级 WebSocket 状态同步（全员可控）
 - 移动端优先的响应式界面
@@ -35,7 +36,7 @@ npm run -w worker dev
 
 ### 2) 音乐代理
 
-`GET /api/music/search?q=关键词` 在 Worker 中转到 `music.gdstudio.xyz`。
+`GET /api/music/search?q=关键词`、`GET /api/music/detail/:id`、`GET /api/music/url/:id`、`GET /api/music/lyric/:id` 均由 Worker 代理到 `music.gdstudio.xyz`。
 
 ### 3) 同步播放
 

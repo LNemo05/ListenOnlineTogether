@@ -9,8 +9,8 @@ type AppState = {
   playbackMs: number;
   isPlaying: boolean;
   setToken: (token: string | null) => void;
-  applyRemoteAction: (action: SyncAction, songId: string, playbackMs: number) => void;
   setRoomCode: (roomCode: string) => void;
+  setPlayback: (songId: string | null, playbackMs: number, isPlaying: boolean) => void;
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -21,18 +21,10 @@ export const useAppStore = create<AppState>((set) => ({
   isPlaying: false,
   setToken: (token) =>
     set(() => {
-      if (token) {
-        localStorage.setItem('lot_token', token);
-      } else {
-        localStorage.removeItem('lot_token');
-      }
+      if (token) localStorage.setItem('lot_token', token);
+      else localStorage.removeItem('lot_token');
       return { token };
     }),
-  applyRemoteAction: (action, songId, playbackMs) =>
-    set(() => ({
-      playingSongId: songId,
-      playbackMs,
-      isPlaying: action === 'play' || (action !== 'pause' && playbackMs > 0)
-    })),
-  setRoomCode: (roomCode) => set(() => ({ roomCode }))
+  setRoomCode: (roomCode) => set(() => ({ roomCode })),
+  setPlayback: (playingSongId, playbackMs, isPlaying) => set(() => ({ playingSongId, playbackMs, isPlaying }))
 }));
