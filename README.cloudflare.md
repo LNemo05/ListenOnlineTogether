@@ -94,3 +94,4 @@ npm run -w frontend dev
 2. **`Authentication error`**：Token 权限不够或账号 ID 错误。
 3. **`database_id` / `kv id` 相关错误**：`wrangler.toml` 中占位符未替换。
 4. **运行时报 `JWT_SECRET` 缺失**：需要在 Worker 环境中设置 secret，而不是只放在 GitHub Secrets。
+5. **`Dependencies lock file is not found`**：这是 `setup-node` 开了 `cache: npm` 但仓库没有 lock file 导致；本仓库工作流已关闭该缓存配置。
