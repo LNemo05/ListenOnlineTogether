@@ -2,17 +2,14 @@ name = "listen-online-together-api"
 main = "src/index.ts"
 compatibility_date = "2024-08-20"
 
-[vars]
-MUSIC_API_BASE = "https://music.gdstudio.xyz"
-
 [[d1_databases]]
 binding = "DB"
 database_name = "lot-db"
-database_id = "replace-with-real-id"
+database_id = "REPLACE_WITH_D1_DATABASE_ID"
 
 [[kv_namespaces]]
 binding = "ROOM_META"
-id = "replace-with-real-kv-id"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
 
 [[durable_objects.bindings]]
 name = "ROOMS"
@@ -21,3 +18,7 @@ class_name = "RoomSyncDO"
 [[migrations]]
 tag = "v1"
 new_classes = ["RoomSyncDO"]
+
+[vars]
+MUSIC_API_BASE = "https://music.gdstudio.xyz"
+BUILD_SHA = "dev"
