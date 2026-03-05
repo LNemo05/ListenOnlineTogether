@@ -1,0 +1,9 @@
+{
+  "name": "listen-online-together",
+  "private": true,
+  "workspaces": ["frontend", "worker"],
+  "scripts": {
+    "build": "npm run -w frontend build && npm run -w worker build",
+    "test": "npm run -w frontend build && npm run -w worker typecheck"
+  }
+}
