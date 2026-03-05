@@ -17,7 +17,7 @@ class_name = "RoomSyncDO"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["RoomSyncDO"]
+new_sqlite_classes = ["RoomSyncDO"]
 
 [vars]
 MUSIC_API_BASE = "https://music.gdstudio.xyz"

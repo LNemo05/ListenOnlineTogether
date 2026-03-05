@@ -82,3 +82,4 @@ npm run -w frontend dev
 2. **`KV namespace ... is not valid`**：代表还在使用占位符，确认是否走了 `Generate wrangler.ci.toml` 步骤。
 3. **`Authentication error`**：Token 权限不足或 Account ID 错误。
 4. **`JWT_SECRET` 缺失**：在 Worker 环境执行 `wrangler secret put JWT_SECRET`。
+5. **`code: 10097`（Free plan Durable Objects）**：`wrangler.toml` 里 DO 迁移必须使用 `new_sqlite_classes`，不能用 `new_classes`。本仓库已改为 SQLite DO 迁移声明。
