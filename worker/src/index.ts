@@ -60,6 +60,22 @@ const auth = async (c: any, next: () => Promise<void>) => {
   }
 };
 
+
+app.get('/', (c) =>
+  c.html(`<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><title>Listen Online Together API</title></head>
+  <body style="font-family: system-ui, sans-serif; padding: 24px;">
+    <h1>Listen Online Together API</h1>
+    <p>服务已部署成功。</p>
+    <ul>
+      <li>健康检查：<a href="/api/health">/api/health</a></li>
+      <li>音乐搜索：<code>/api/music/search?q=关键词</code></li>
+    </ul>
+  </body>
+</html>`)
+);
+
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 app.post('/api/auth/register', async (c) => {

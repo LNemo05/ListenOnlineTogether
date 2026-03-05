@@ -83,3 +83,13 @@ npm run -w frontend dev
 3. **`Authentication error`**：Token 权限不足或 Account ID 错误。
 4. **`JWT_SECRET` 缺失**：在 Worker 环境执行 `wrangler secret put JWT_SECRET`。
 5. **`code: 10097`（Free plan Durable Objects）**：`wrangler.toml` 里 DO 迁移必须使用 `new_sqlite_classes`，不能用 `new_classes`。本仓库已改为 SQLite DO 迁移声明。
+
+
+## 七、访问路径说明
+
+部署成功后，访问 Worker 根路径 `/` 会返回一个简单的 API 欢迎页（不再是 404）。
+
+- `https://<your-worker>.workers.dev/`
+- `https://<your-worker>.workers.dev/api/health`
+
+如果你希望根路径直接展示前端页面，需要额外把前端部署到 Cloudflare Pages，或给 Worker 配置 `assets` 静态资源绑定。
