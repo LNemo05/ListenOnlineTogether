@@ -36,7 +36,10 @@ npm run -w worker dev
 
 ### 2) 音乐代理
 
-`GET /api/music/search?q=关键词`、`GET /api/music/detail/:id`、`GET /api/music/url/:id`、`GET /api/music/lyric/:id` 均由 Worker 代理到 `music.gdstudio.xyz`。
+`GET /api/music/search`、`GET /api/music/url/:id`、`GET /api/music/pic/:id`、`GET /api/music/lyric/:id` 均由 Worker 按 GD 音乐 API 文档代理到 `music-api.gdstudio.xyz/api.php`，并透传 `source/br/count/pages/size` 等参数。
+
+- `source` 支持文档中的音乐源（含 `bilibili`）以及高级写法 `*_album`（如 `netease_album`）。
+- 搜索接口支持 `q` 与 `name` 两种关键词参数（内部统一映射到文档 `name`）。
 
 ### 3) 同步播放
 
@@ -76,3 +79,26 @@ npm run -w worker dev
 - 部署与配置说明：`README.cloudflare.md`
 - 一键部署工作流：`.github/workflows/cloudflare-workers.yml`
 - 一键部署前置条件：仓库需配置 `CLOUDFLARE_API_TOKEN` 与 `CLOUDFLARE_ACCOUNT_ID`。
+
+
+## GD 音乐 API 使用说明（摘要）
+
+- 仅用于学习用途，请勿下载/传播/商用。
+- 建议稳定源：`netease`、`kuwo`、`joox`、`bilibili`。
+- 访问限制：5 分钟不超过 50 次请求。
+- 本项目前端支持选择 `source`（音源）和 `br`（音质）。
+
+
+## 访问说明
+
+- 访问 Worker 根域名将直接返回前端播放器页面（由 Worker `assets` 托管 `frontend/dist`）。
+- API 仍通过 `/api/*` 提供。
+
+
+## 项目定位说明
+
+- 本项目是“前端播放器应用”，不是单独的 API 产品。
+- Cloudflare Worker 在这里主要承担：
+  - 音乐平台 API 代理（解决跨域 + 参数归一化）
+  - 鉴权、歌单 CRUD、房间同步（DO）
+- 访问 `workers.dev` 根域名应直接进入前端播放器页面；`/api/*` 只是前端依赖的后端接口。

@@ -2,6 +2,8 @@ name = "listen-online-together-api"
 main = "src/index.ts"
 compatibility_date = "2024-08-20"
 
+assets = { directory = "../frontend/dist", binding = "ASSETS" }
+
 [[d1_databases]]
 binding = "DB"
 database_name = "lot-db"
@@ -20,5 +22,5 @@ tag = "v1"
 new_sqlite_classes = ["RoomSyncDO"]
 
 [vars]
-MUSIC_API_BASE = "https://music.gdstudio.xyz"
+MUSIC_API_BASE = "https://music-api.gdstudio.xyz/api.php"
 BUILD_SHA = "dev"

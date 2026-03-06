@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "worker/**"
+      - "frontend/**"
       - ".github/workflows/cloudflare-workers.yml"
       - "package.json"
   workflow_dispatch:
@@ -44,6 +45,9 @@ jobs:
 
       - name: Typecheck worker
         run: npm run -w worker typecheck
+
+      - name: Build frontend assets
+        run: npm run -w frontend build
 
       - name: Generate wrangler.ci.toml (auto ensure D1/KV)
         env:

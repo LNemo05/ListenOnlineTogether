@@ -87,9 +87,24 @@ npm run -w frontend dev
 
 ## 七、访问路径说明
 
-部署成功后，访问 Worker 根路径 `/` 会返回一个简单的 API 欢迎页（不再是 404）。
+部署成功后，访问 Worker 根路径 `/` 会直接打开前端播放器页面（由 Worker assets 托管）。
 
 - `https://<your-worker>.workers.dev/`
 - `https://<your-worker>.workers.dev/api/health`
 
-如果你希望根路径直接展示前端页面，需要额外把前端部署到 Cloudflare Pages，或给 Worker 配置 `assets` 静态资源绑定。
+本仓库已经配置 Worker `assets` 绑定，因此默认就是根路径展示前端。
+
+
+## 前端发布方式
+
+- 本项目通过 Worker `assets` 绑定托管 `../frontend/dist`，因此部署前 CI 会先执行 `npm run -w frontend build`。
+- 部署后访问 `https://<worker>.workers.dev/` 将直接打开前端播放器，而不是 API 占位页。
+- API 路径保持在 `https://<worker>.workers.dev/api/*`。
+
+
+## 额外排查：如果你看到的是 API 提示页而不是播放器
+
+1. 确认部署的是最新 commit（包含 Worker assets 配置与前端构建步骤）。
+2. 检查 CI 是否执行了 `npm run -w frontend build`。
+3. 检查 `worker/wrangler.ci.toml` 中是否保留了 `assets = { directory = "../frontend/dist", binding = "ASSETS" }`。
+4. 若仍异常，重新触发一次 workflow_dispatch。

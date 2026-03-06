@@ -8,19 +8,11 @@ type Env = {
   ROOM_META: KVNamespace;
   JWT_SECRET: string;
   MUSIC_API_BASE?: string;
+  ASSETS?: Fetcher;
 };
 
 type Variables = { user: JWTPayload };
-
-type RoomState = { songId: string | null; playbackMs: number; isPlaying: boolean };
-
-type ClientControlMessage = {
-  type: 'control';
-  action: 'play' | 'pause' | 'seek' | 'next';
-  songId: string;
-  playbackMs: number;
-  sentAt: number;
-};
+type RoomState = { songId: string | null; playbackMs: number; isPlaying: boolean; source: string };
 
 const encoder = new TextEncoder();
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
@@ -28,7 +20,17 @@ app.use('*', cors());
 
 const uuid = () => crypto.randomUUID();
 const nowIso = () => new Date().toISOString();
-const musicBase = (env: Env) => env.MUSIC_API_BASE ?? 'https://music.gdstudio.xyz';
+const musicBase = (env: Env) => env.MUSIC_API_BASE ?? 'https://music-api.gdstudio.xyz/api.php';
+const baseSources = new Set([
+  'netease', 'tencent', 'tidal', 'spotify', 'ytmusic', 'qobuz', 'joox', 'deezer', 'migu', 'kugou', 'kuwo', 'ximalaya', 'apple', 'bilibili'
+]);
+const parseSource = (source?: string | null) => {
+  if (!source) return 'netease';
+  const v = source.toLowerCase().trim();
+  if (baseSources.has(v)) return v;
+  if (v.endsWith('_album') && baseSources.has(v.slice(0, -6))) return v;
+  return 'netease';
+};
 
 async function hashPassword(password: string, salt: string) {
   const raw = await crypto.subtle.digest('SHA-256', encoder.encode(`${salt}:${password}`));
@@ -61,13 +63,18 @@ const auth = async (c: any, next: () => Promise<void>) => {
 };
 
 async function ensurePlaylistOwner(c: any, playlistId: string, userId: string) {
-  const row = await c.env.DB.prepare('SELECT id FROM playlists WHERE id = ? AND user_id = ?')
-    .bind(playlistId, userId)
-    .first();
+  const row = await c.env.DB.prepare('SELECT id FROM playlists WHERE id = ? AND user_id = ?').bind(playlistId, userId).first();
   return Boolean(row);
 }
 
-app.get('/', (c) => c.html('<h1>Listen Online Together API</h1><p>Use /api/health and frontend app for player UI.</p>'));
+
+app.get('/', async (c) => {
+  const assets = c.env.ASSETS;
+  if (!assets) return c.html('<h1>前端资源未绑定，请检查 wrangler assets 配置</h1>', 500);
+  const indexResp = await assets.fetch(new Request(new URL('/', c.req.url).toString(), c.req.raw));
+  return indexResp.status === 404 ? c.html('<h1>前端资源未构建，请先构建 frontend/dist</h1>', 500) : indexResp;
+});
+
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 app.post('/api/auth/register', async (c) => {
@@ -76,9 +83,9 @@ app.post('/api/auth/register', async (c) => {
   const salt = uuid();
   const hash = await hashPassword(body.password, salt);
   const id = uuid();
-  const result = await c.env.DB.prepare(
-    'INSERT INTO users (id, username, password_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)'
-  ).bind(id, body.username, hash, salt, nowIso()).run();
+  const result = await c.env.DB.prepare('INSERT INTO users (id, username, password_hash, salt, created_at) VALUES (?, ?, ?, ?, ?)')
+    .bind(id, body.username, hash, salt, nowIso())
+    .run();
   if (!result.success) return c.json({ error: 'username exists' }, 409);
   return c.json({ token: await signToken(c.env.JWT_SECRET, id, body.username) });
 });
@@ -95,65 +102,71 @@ app.post('/api/auth/login', async (c) => {
 });
 
 app.get('/api/music/search', async (c) => {
-  const q = c.req.query('q') ?? '';
-  const resp = await fetch(`${musicBase(c.env)}/search?keywords=${encodeURIComponent(q)}`);
+  const name = c.req.query('q') ?? c.req.query('name') ?? '';
+  const source = parseSource(c.req.query('source'));
+  const count = Number(c.req.query('count') ?? '20');
+  const pages = Number(c.req.query('pages') ?? '1');
+  const url = `${musicBase(c.env)}?types=search&source=${encodeURIComponent(source)}&name=${encodeURIComponent(name)}&count=${count}&pages=${pages}`;
+  const resp = await fetch(url);
   if (!resp.ok) return c.json({ error: 'upstream_error', status: resp.status }, 502);
-  const data = await resp.json<any>();
+  const data = await resp.json<any[]>();
   return c.json({
-    result: (data?.result?.songs ?? []).slice(0, 12).map((song: any) => ({
+    result: (data ?? []).map((song: any) => ({
       id: String(song.id),
-      name: song.name,
-      artist: song.artists?.[0]?.name ?? 'Unknown',
-      cover: song.album?.picUrl ?? ''
+      name: String(song.name ?? 'Unknown'),
+      artist: Array.isArray(song.artist) ? song.artist.join(' / ') : String(song.artist ?? 'Unknown'),
+      album: String(song.album ?? ''),
+      source: String(song.source ?? source),
+      lyricId: String(song.lyric_id ?? song.id ?? ''),
+      picId: String(song.pic_id ?? ''),
+      cover: ''
     }))
   });
 });
 
 app.get('/api/music/url/:id', async (c) => {
   const id = c.req.param('id');
-  const resp = await fetch(`${musicBase(c.env)}/song/url?id=${encodeURIComponent(id)}`);
+  const source = parseSource(c.req.query('source'));
+  const br = c.req.query('br') ?? '999';
+  const url = `${musicBase(c.env)}?types=url&source=${encodeURIComponent(source)}&id=${encodeURIComponent(id)}&br=${encodeURIComponent(br)}`;
+  const resp = await fetch(url);
   if (!resp.ok) return c.json({ error: 'upstream_error', status: resp.status }, 502);
   const data = await resp.json<any>();
-  const url = data?.data?.[0]?.url ?? null;
-  return c.json({ id, url });
+  return c.json({ id, source, url: data?.url ?? null, br: data?.br ?? null, size: data?.size ?? null });
 });
 
-
-app.get('/api/music/detail/:id', async (c) => {
+app.get('/api/music/pic/:id', async (c) => {
   const id = c.req.param('id');
-  const resp = await fetch(`${musicBase(c.env)}/song/detail?ids=${encodeURIComponent(id)}`);
+  const source = parseSource(c.req.query('source'));
+  const size = c.req.query('size') ?? '500';
+  const url = `${musicBase(c.env)}?types=pic&source=${encodeURIComponent(source)}&id=${encodeURIComponent(id)}&size=${encodeURIComponent(size)}`;
+  const resp = await fetch(url);
   if (!resp.ok) return c.json({ error: 'upstream_error', status: resp.status }, 502);
   const data = await resp.json<any>();
-  const song = data?.songs?.[0];
-  return c.json({
-    id,
-    name: song?.name ?? 'Unknown',
-    artist: song?.ar?.[0]?.name ?? 'Unknown',
-    cover: song?.al?.picUrl ?? ''
-  });
+  return c.json({ id, source, url: data?.url ?? '' });
 });
 
 app.get('/api/music/lyric/:id', async (c) => {
   const id = c.req.param('id');
-  const resp = await fetch(`${musicBase(c.env)}/lyric?id=${encodeURIComponent(id)}`);
+  const source = parseSource(c.req.query('source'));
+  const url = `${musicBase(c.env)}?types=lyric&source=${encodeURIComponent(source)}&id=${encodeURIComponent(id)}`;
+  const resp = await fetch(url);
   if (!resp.ok) return c.json({ error: 'upstream_error', status: resp.status }, 502);
   const data = await resp.json<any>();
-  return c.json({ id, lyric: data?.lrc?.lyric ?? '暂无歌词' });
+  return c.json({ id, source, lyric: data?.lyric ?? '暂无歌词', tlyric: data?.tlyric ?? '' });
 });
 
 app.post('/api/playlists', auth, async (c) => {
   const body = await c.req.json<{ name: string }>();
   const user = c.get('user') as JWTPayload;
   const id = uuid();
-  await c.env.DB.prepare('INSERT INTO playlists (id, user_id, name, created_at) VALUES (?, ?, ?, ?)')
-    .bind(id, user.sub, body.name, nowIso()).run();
+  await c.env.DB.prepare('INSERT INTO playlists (id, user_id, name, created_at) VALUES (?, ?, ?, ?)').bind(id, user.sub, body.name, nowIso()).run();
   return c.json({ id, name: body.name });
 });
 
 app.get('/api/playlists', auth, async (c) => {
   const user = c.get('user') as JWTPayload;
-  const rows = await c.env.DB.prepare('SELECT id, name, created_at FROM playlists WHERE user_id = ? ORDER BY created_at DESC')
-    .bind(user.sub).all();
+  const rows = await c.env.DB.prepare('SELECT id, name, created_at FROM playlists WHERE user_id = ? ORDER BY created_at DESC').bind(user.sub).all();
   return c.json({ result: rows.results ?? [] });
 });
 
@@ -162,7 +175,7 @@ app.get('/api/playlists/:id/tracks', auth, async (c) => {
   const user = c.get('user') as JWTPayload;
   if (!(await ensurePlaylistOwner(c, playlistId, String(user.sub)))) return c.json({ error: 'forbidden' }, 403);
   const rows = await c.env.DB.prepare(
-    'SELECT id, playlist_id, track_id, song_name, artist_name, cover_url, created_at FROM playlist_tracks WHERE playlist_id = ? ORDER BY created_at DESC'
+    'SELECT id, playlist_id, track_id, song_name, artist_name, cover_url, source, lyric_id, pic_id, created_at FROM playlist_tracks WHERE playlist_id = ? ORDER BY created_at DESC'
   ).bind(playlistId).all();
   return c.json({ result: rows.results ?? [] });
 });
@@ -171,18 +184,17 @@ app.post('/api/playlists/:id/tracks', auth, async (c) => {
   const playlistId = c.req.param('id');
   const user = c.get('user') as JWTPayload;
   if (!(await ensurePlaylistOwner(c, playlistId, String(user.sub)))) return c.json({ error: 'forbidden' }, 403);
-  const body = await c.req.json<{ trackId: string; songName: string; artistName: string; coverUrl: string }>();
+  const body = await c.req.json<{ trackId: string; songName: string; artistName: string; coverUrl: string; source?: string; lyricId?: string; picId?: string }>();
   await c.env.DB.prepare(
-    'INSERT INTO playlist_tracks (playlist_id, track_id, song_name, artist_name, cover_url, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(playlistId, body.trackId, body.songName, body.artistName, body.coverUrl, nowIso()).run();
+    'INSERT INTO playlist_tracks (playlist_id, track_id, song_name, artist_name, cover_url, source, lyric_id, pic_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+  ).bind(playlistId, body.trackId, body.songName, body.artistName, body.coverUrl, parseSource(body.source), body.lyricId ?? null, body.picId ?? null, nowIso()).run();
   return c.json({ ok: true });
 });
 
 app.delete('/api/playlists/:id/tracks/:trackId', auth, async (c) => {
   const user = c.get('user') as JWTPayload;
   if (!(await ensurePlaylistOwner(c, c.req.param('id'), String(user.sub)))) return c.json({ error: 'forbidden' }, 403);
-  await c.env.DB.prepare('DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?')
-    .bind(c.req.param('id'), c.req.param('trackId')).run();
+  await c.env.DB.prepare('DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?').bind(c.req.param('id'), c.req.param('trackId')).run();
   return c.json({ ok: true });
 });
 
@@ -204,7 +216,6 @@ app.get('/api/rooms/:code/ws', async (c) => {
   } catch {
     return c.json({ error: 'invalid token' }, 401);
   }
-
   const roomCode = c.req.param('code').toUpperCase();
   const id = c.env.ROOMS.idFromName(roomCode);
   const req = new Request(c.req.raw, { headers: new Headers(c.req.raw.headers) });
@@ -215,11 +226,10 @@ app.get('/api/rooms/:code/ws', async (c) => {
 export class RoomSyncDO {
   sessions = new Set<WebSocket>();
   users = new Map<WebSocket, string>();
-  roomState: RoomState = { songId: null, playbackMs: 0, isPlaying: false };
+  roomState: RoomState = { songId: null, playbackMs: 0, isPlaying: false, source: 'netease' };
 
   async fetch(request: Request) {
     if (request.headers.get('Upgrade') !== 'websocket') return new Response('Expected websocket', { status: 426 });
-
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     server.accept();
@@ -227,7 +237,7 @@ export class RoomSyncDO {
     this.users.set(server, request.headers.get('x-user-id') ?? 'anonymous');
 
     const broadcastMeta = () => {
-      const payload = JSON.stringify({ type: 'meta', online: this.sessions.size, songId: this.roomState.songId, isPlaying: this.roomState.isPlaying });
+      const payload = JSON.stringify({ type: 'meta', online: this.sessions.size, ...this.roomState });
       for (const ws of this.sessions) ws.send(payload);
     };
     broadcastMeta();
@@ -235,33 +245,17 @@ export class RoomSyncDO {
     server.addEventListener('message', (event) => {
       let msg: any;
       try { msg = JSON.parse(String(event.data)); } catch { return; }
-      if (msg.type === 'leave') {
-        server.close();
-        return;
-      }
-      if (msg.type === 'join') {
-        broadcastMeta();
-        return;
-      }
+      if (msg.type === 'leave') return server.close();
+      if (msg.type === 'join') return broadcastMeta();
       if (msg.type !== 'control') return;
-      const control = msg as ClientControlMessage;
       this.roomState = {
-        songId: control.songId,
-        playbackMs: Number(control.playbackMs ?? 0),
-        isPlaying: control.action === 'play' || control.action === 'next'
+        songId: String(msg.songId ?? ''),
+        playbackMs: Number(msg.playbackMs ?? 0),
+        isPlaying: msg.action === 'play' || msg.action === 'next',
+        source: parseSource(msg.source)
       };
-      const payload = JSON.stringify({
-        type: 'sync',
-        action: control.action,
-        songId: control.songId,
-        playbackMs: control.playbackMs,
-        sentAt: control.sentAt,
-        from: this.users.get(server),
-        online: this.sessions.size
-      });
-      for (const ws of this.sessions) {
-        if (ws !== server) ws.send(payload);
-      }
+      const payload = JSON.stringify({ type: 'sync', action: msg.action, songId: msg.songId, playbackMs: msg.playbackMs, source: this.roomState.source, sentAt: msg.sentAt, from: this.users.get(server), online: this.sessions.size });
+      for (const ws of this.sessions) if (ws !== server) ws.send(payload);
       broadcastMeta();
     });
 
@@ -274,5 +268,16 @@ export class RoomSyncDO {
     return new Response(null, { status: 101, webSocket: client });
   }
 }
+
+
+app.notFound(async (c) => {
+  if (c.req.path.startsWith('/api/')) return c.json({ error: 'not_found' }, 404);
+  const assets = c.env.ASSETS;
+  if (!assets) return c.html('<h1>Frontend assets not configured</h1>', 404);
+  const assetResp = await assets.fetch(c.req.raw);
+  if (assetResp.status !== 404) return assetResp;
+  const indexResp = await assets.fetch(new Request(new URL('/', c.req.url).toString(), c.req.raw));
+  return indexResp.status === 404 ? c.html('<h1>Frontend assets not built</h1>', 404) : indexResp;
+});
 
 export default app;
